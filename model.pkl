@@ -1,0 +1,110 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
+import joblib
+
+# Load the dataset
+data = pd.read_csv('data.csv')
+
+# Define features and target
+features = ['radius_mean', 'texture_mean', 'perimeter_mean', 'area_mean', 
+            'smoothness_mean', 'compactness_mean', 'concavity_mean', 
+            'concave points_mean', 'symmetry_mean', 'fractal_dimension_mean']
+target = 'diagnosis'
+
+# Convert categorical target to numerical
+le = LabelEncoder()
+data[target] = le.fit_transform(data[target])
+
+# Split data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(data[features], data[target], 
+                                                   test_size=0.2, random_state=42)
+
+# Scale the features
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+print("\n=== KNN Model Evaluation ===")
+# Perform Grid Search with Cross Validation to find best K
+param_grid_knn = {'n_neighbors': range(1, 21)}
+knn = KNeighborsClassifier()
+grid_search_knn = GridSearchCV(knn, param_grid_knn, cv=5, scoring='accuracy')
+grid_search_knn.fit(X_train_scaled, y_train)
+
+# Get the best K value
+best_k = grid_search_knn.best_params_['n_neighbors']
+print(f"Best K value: {best_k}")
+
+# Train the KNN model with best K
+knn_model = KNeighborsClassifier(n_neighbors=best_k)
+knn_model.fit(X_train_scaled, y_train)
+
+# Perform cross-validation for KNN
+knn_cv_scores = cross_val_score(knn_model, X_train_scaled, y_train, cv=5)
+print(f"KNN Cross-validation scores: {knn_cv_scores}")
+print(f"KNN Mean CV accuracy: {knn_cv_scores.mean():.2f} (+/- {knn_cv_scores.std() * 2:.2f})")
+
+# Evaluate KNN on test set
+knn_y_pred = knn_model.predict(X_test_scaled)
+knn_accuracy = accuracy_score(y_test, knn_y_pred)
+print(f'KNN Test set Accuracy: {knn_accuracy:.2f}')
+print("KNN Classification Report:")
+print(classification_report(y_test, knn_y_pred))
+
+print("\n=== Random Forest Model Evaluation ===")
+# Perform Grid Search with Cross Validation for Random Forest
+param_grid_rf = {
+    'n_estimators': [50, 100, 200],
+    'max_depth': [None, 10, 20, 30],
+    'min_samples_split': [2, 5, 10]
+}
+rf = RandomForestClassifier(random_state=42)
+grid_search_rf = GridSearchCV(rf, param_grid_rf, cv=5, scoring='accuracy')
+grid_search_rf.fit(X_train, y_train)  # No need to scale for Random Forest
+
+# Get the best parameters
+best_params = grid_search_rf.best_params_
+print(f"Best Random Forest parameters: {best_params}")
+
+# Train the Random Forest model with best parameters
+rf_model = RandomForestClassifier(**best_params, random_state=42)
+rf_model.fit(X_train, y_train)
+
+# Perform cross-validation for Random Forest
+rf_cv_scores = cross_val_score(rf_model, X_train, y_train, cv=5)
+print(f"Random Forest Cross-validation scores: {rf_cv_scores}")
+print(f"Random Forest Mean CV accuracy: {rf_cv_scores.mean():.2f} (+/- {rf_cv_scores.std() * 2:.2f})")
+
+# Evaluate Random Forest on test set
+rf_y_pred = rf_model.predict(X_test)
+rf_accuracy = accuracy_score(y_test, rf_y_pred)
+print(f'Random Forest Test set Accuracy: {rf_accuracy:.2f}')
+print("Random Forest Classification Report:")
+print(classification_report(y_test, rf_y_pred))
+
+# Compare models
+print("\n=== Model Comparison ===")
+print(f"KNN Test Accuracy: {knn_accuracy:.2f}")
+print(f"Random Forest Test Accuracy: {rf_accuracy:.2f}")
+
+# Save the better performing model
+if rf_accuracy > knn_accuracy:
+    print("\nSaving Random Forest model as it performed better...")
+    model = rf_model
+    # No need to save scaler for Random Forest
+else:
+    print("\nSaving KNN model as it performed better...")
+    model = knn_model
+    joblib.dump(scaler, 'scaler.joblib')
+
+# Save the model and components
+joblib.dump(model, 'model.joblib')
+joblib.dump(le, 'label_encoder.joblib')
+joblib.dump(features, 'features.joblib')
+
+print("\nModel training and comparison completed successfully!")
